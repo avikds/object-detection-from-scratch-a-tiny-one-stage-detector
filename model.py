@@ -98,3 +98,61 @@ def box_iou(a, b):
 
     return iou
 
+# Step 3 - shape_mask
+CLASSES = ("circle", "square", "triangle")
+
+
+def shape_mask(kind, cx, cy, r, size):
+    """
+    Rasterize a shape into a boolean mask.
+
+    Args:
+        kind: Shape type (0 = circle, 1 = square, 2 = triangle).
+        cx: Center x-coordinate.
+        cy: Center y-coordinate.
+        r: Radius or half-size of the shape.
+        size: Width and height of the output mask.
+
+    Returns:
+        Boolean NumPy array of shape (size, size).
+    """
+    # Validate the shape type.
+    if kind not in (0, 1, 2):
+        raise ValueError("kind must be 0 (circle), 1 (square), or 2 (triangle)")
+
+    # Create pixel-center coordinates.
+    # Column j has x-coordinate j + 0.5.
+    # Row i has y-coordinate i + 0.5.
+    x = np.arange(size, dtype=np.float64) + 0.5
+    y = np.arange(size, dtype=np.float64) + 0.5
+
+    # Generate a 2D coordinate grid.
+    xx, yy = np.meshgrid(x, y)
+
+    # Circle: (x - cx)^2 + (y - cy)^2 <= r^2
+    if kind == 0:
+        mask = (xx - cx) ** 2 + (yy - cy) ** 2 <= r ** 2
+
+    # Square: |x - cx| <= r and |y - cy| <= r
+    elif kind == 1:
+        mask = (np.abs(xx - cx) <= r) & (np.abs(yy - cy) <= r)
+
+    # Triangle: upward-pointing triangle.
+    # Its apex is at (cx, cy - r), and its base is at y = cy + r.
+    else:
+        if r <= 0:
+            return np.zeros((size, size), dtype=bool)
+
+        # Normalized vertical position within the triangle.
+        t = (yy - (cy - r)) / (2.0 * r)
+
+        # A pixel belongs to the triangle when:
+        # 0 <= t <= 1 and |x - cx| <= r * t.
+        mask = (
+            (t >= 0.0)
+            & (t <= 1.0)
+            & (np.abs(xx - cx) <= r * t)
+        )
+
+    return mask.astype(bool)
+

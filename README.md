@@ -12,6 +12,7 @@ python scaffold.py
 
 - [x] **1.** box_area
 - [x] **2.** box_iou
+- [x] **3.** shape_mask
 
 ---
 
