@@ -553,3 +553,111 @@ def decode_boxes(deltas, anchors):
     # Return decoded boxes as a float64 NumPy array.
     return np.column_stack((x0, y0, x1, y1)).astype(np.float64)
 
+# Step 10 - assign_targets
+def assign_targets(anchors, gt_boxes, gt_labels, num_classes,
+                   pos_iou=0.5, neg_iou=0.4, force_best=True):
+    """
+    Assign classification and box regression targets to anchors.
+
+    Args:
+        anchors: Array of shape (A, 4) containing anchor boxes.
+        gt_boxes: Array of shape (M, 4) containing ground-truth boxes.
+        gt_labels: Array of shape (M,) containing ground-truth class labels.
+        num_classes: Number of object classes.
+        pos_iou: IoU threshold for positive anchors.
+        neg_iou: IoU threshold for negative anchors.
+        force_best: Whether to force the best anchor for each ground-truth box.
+
+    Returns:
+        cls_t: Float32 array of shape (A, num_classes), one-hot class targets.
+        box_t: Float32 array of shape (A, 4), encoded box regression targets.
+        pos: Boolean array of shape (A,), indicating positive anchors.
+        valid: Boolean array of shape (A,), indicating non-ignored anchors.
+    """
+
+    # Convert inputs to NumPy arrays.
+    anchors = np.asarray(anchors, dtype=np.float64)
+    gt_boxes = np.asarray(gt_boxes, dtype=np.float64)
+    gt_labels = np.asarray(gt_labels, dtype=np.int64)
+
+    # Determine the number of anchors and ground-truth boxes.
+    A = len(anchors)
+    M = len(gt_boxes)
+
+    # Initialize classification and box regression targets.
+    cls_t = np.zeros((A, num_classes), dtype=np.float32)
+    box_t = np.zeros((A, 4), dtype=np.float32)
+
+    # Initialize positive and valid anchor masks.
+    pos = np.zeros(A, dtype=bool)
+    valid = np.ones(A, dtype=bool)
+
+    # If there are no ground-truth objects, all anchors are negatives.
+    if M == 0:
+        return cls_t, box_t, pos, valid
+
+    # Calculate the pairwise IoU matrix of shape (A, M).
+    ious = box_iou(anchors, gt_boxes)
+
+    # Match every anchor to its ground-truth box with the highest IoU.
+    # np.argmax returns the first index when multiple values are tied.
+    matched_gt = np.argmax(ious, axis=1)
+
+    # Find the best IoU for every anchor.
+    best_iou = np.max(ious, axis=1)
+
+    # Assign positive anchors.
+    pos = best_iou >= pos_iou
+
+    # Assign negative anchors.
+    neg = best_iou < neg_iou
+
+    # Anchors between the thresholds are ignored.
+    valid = pos | neg
+
+    # --------------------------------------------------
+    # Force the best-matching anchor for each ground-truth box.
+    # --------------------------------------------------
+    if force_best:
+        for m in range(M):
+
+            # Find the anchor with the highest IoU for ground-truth box m.
+            # np.argmax selects the first anchor in case of a tie.
+            a = np.argmax(ious[:, m])
+
+            # Only force a match when the best IoU is greater than zero.
+            if ious[a, m] > 0:
+
+                # Mark the selected anchor as positive and valid.
+                pos[a] = True
+                valid[a] = True
+
+                # Assign this anchor to the current ground-truth box.
+                matched_gt[a] = m
+
+    # --------------------------------------------------
+    # Generate classification and box regression targets.
+    # --------------------------------------------------
+
+    # Get the indices of all positive anchors.
+    pos_idx = np.flatnonzero(pos)
+
+    if len(pos_idx) > 0:
+
+        # Retrieve the ground-truth box matched to each positive anchor.
+        matched_boxes = gt_boxes[matched_gt[pos_idx]]
+
+        # Retrieve the corresponding class labels.
+        matched_labels = gt_labels[matched_gt[pos_idx]]
+
+        # Assign one-hot classification targets.
+        cls_t[pos_idx, matched_labels] = 1.0
+
+        # Encode ground-truth boxes relative to their matched anchors.
+        box_t[pos_idx] = encode_boxes(
+            matched_boxes,
+            anchors[pos_idx]
+        ).astype(np.float32)
+
+    return cls_t, box_t, pos, valid
+
