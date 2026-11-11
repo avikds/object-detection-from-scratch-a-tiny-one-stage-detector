@@ -930,3 +930,55 @@ class TinyDetector(nn.Module):
 
         return cls_logits, box_deltas
 
+# Step 16 - focal_loss
+def focal_loss(logits, targets, valid, gamma=2.0, alpha=0.25):
+    """
+    Compute the summed sigmoid focal loss.
+
+    Args:
+        logits: Raw classification logits of shape (N, A, C).
+        targets: Binary classification targets of shape (N, A, C).
+        valid: Valid-anchor mask of shape (N, A).
+        gamma: Focal loss modulation parameter.
+        alpha: Positive/negative class balancing parameter.
+               A negative value disables alpha weighting.
+
+    Returns:
+        Scalar PyTorch tensor containing the summed focal loss.
+    """
+
+    # Ensure targets have the same data type as the logits.
+    targets = targets.to(dtype=logits.dtype)
+
+    # Calculate sigmoid probabilities.
+    p = torch.sigmoid(logits)
+
+    # Calculate sigmoid cross-entropy in a numerically stable form:
+    # CE(x, y) = max(x, 0) - x*y + log(1 + exp(-|x|))
+    ce = (
+        torch.clamp_min(logits, 0.0)
+        - logits * targets
+        + torch.log1p(torch.exp(-torch.abs(logits)))
+    )
+
+    # Calculate the probability assigned to the correct target.
+    p_t = p * targets + (1.0 - p) * (1.0 - targets)
+
+    # Apply focal modulation when gamma is nonzero.
+    if gamma != 0:
+        ce = ce * (1.0 - p_t) ** gamma
+
+    # Apply alpha balancing when alpha is nonnegative.
+    if alpha >= 0:
+        alpha_t = alpha * targets + (1.0 - alpha) * (1.0 - targets)
+        ce = ce * alpha_t
+
+    # Mask out ignored anchors.
+    # Expand valid from (N, A) to (N, A, 1) for broadcasting.
+    valid_mask = valid.to(dtype=logits.dtype).unsqueeze(-1)
+
+    loss = ce * valid_mask
+
+    # Return the summed loss without normalization.
+    return loss.sum()
+
