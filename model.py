@@ -156,3 +156,42 @@ def shape_mask(kind, cx, cy, r, size):
 
     return mask.astype(bool)
 
+# Step 4 - mask_to_box
+def mask_to_box(mask):
+    """
+    Convert a boolean mask into its tight bounding box.
+
+    Args:
+        mask: Boolean NumPy array of shape (H, W).
+
+    Returns:
+        A float64 NumPy array [x0, y0, x1, y1] representing
+        the tight bounding box in pixel-edge coordinates.
+
+    Raises:
+        ValueError: If the mask contains no True pixels or is not 2D.
+    """
+    # Convert the input into a Boolean NumPy array.
+    mask = np.asarray(mask, dtype=bool)
+
+    # Ensure the mask is two-dimensional.
+    if mask.ndim != 2:
+        raise ValueError("mask must be a 2D array")
+
+    # Find the row and column indices of all True pixels.
+    rows, cols = np.where(mask)
+
+    # Raise an error if the mask contains no True pixels.
+    if len(rows) == 0:
+        raise ValueError("mask contains no True pixels")
+
+    # Calculate the tight bounding box.
+    # Add 1 to maximum coordinates because boxes use pixel-edge coordinates.
+    x0 = cols.min()
+    y0 = rows.min()
+    x1 = cols.max() + 1
+    y1 = rows.max() + 1
+
+    # Return the bounding box as a float64 NumPy array.
+    return np.array([x0, y0, x1, y1], dtype=np.float64)
+
