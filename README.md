@@ -31,6 +31,7 @@ python scaffold.py
 - [x] **19.** Trainer
 - [x] **20.** predict_raw
 - [x] **21.** nms
+- [x] **22.** postprocess
 
 ---
 

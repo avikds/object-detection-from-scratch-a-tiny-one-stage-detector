@@ -1341,3 +1341,167 @@ def nms(boxes, scores, iou_thresh=0.5):
     # Return the kept indices as an int64 NumPy array.
     return np.asarray(keep, dtype=np.int64)
 
+# Step 22 - postprocess
+def postprocess(scores, deltas, anchors, size, score_thresh=0.05,
+                iou_thresh=0.5, top_k=100, max_det=20, use_nms=True):
+    """
+    Convert raw predictions into final object detections.
+
+    Args:
+        scores: Classification probabilities of shape (A, C).
+        deltas: Bounding-box regression deltas of shape (A, 4).
+        anchors: Anchor boxes of shape (A, 4).
+        size: Image height and width (assumed square).
+        score_thresh: Minimum confidence score (strictly greater).
+        iou_thresh: IoU threshold used by NMS.
+        top_k: Maximum number of candidates considered.
+        max_det: Maximum number of final detections.
+        use_nms: Whether to apply per-class NMS.
+
+    Returns:
+        boxes: Float64 array of shape (K, 4).
+        det_scores: Array of shape (K,) containing detection scores.
+        labels: Int64 array of shape (K,) containing class indices.
+    """
+
+    # Convert inputs to NumPy arrays.
+    scores = np.asarray(scores)
+    deltas = np.asarray(deltas, dtype=np.float64)
+    anchors = np.asarray(anchors, dtype=np.float64)
+
+    # Validate input shapes.
+    if scores.ndim != 2:
+        raise ValueError("scores must have shape (A, C)")
+
+    if deltas.ndim != 2 or deltas.shape[1] != 4:
+        raise ValueError("deltas must have shape (A, 4)")
+
+    if anchors.ndim != 2 or anchors.shape[1] != 4:
+        raise ValueError("anchors must have shape (A, 4)")
+
+    if scores.shape[0] != deltas.shape[0] or scores.shape[0] != anchors.shape[0]:
+        raise ValueError("scores, deltas, and anchors must have the same number of anchors")
+
+    if top_k < 0 or max_det < 0:
+        raise ValueError("top_k and max_det must be non-negative")
+
+    # Helper for returning correctly shaped empty outputs.
+    def empty_result():
+        return (
+            np.empty((0, 4), dtype=np.float64),
+            np.empty((0,), dtype=scores.dtype),
+            np.empty((0,), dtype=np.int64)
+        )
+
+    # Return immediately when no detections can be produced.
+    if top_k == 0 or max_det == 0:
+        return empty_result()
+
+    # --------------------------------------------------
+    # 1. Find anchor-class pairs above the score threshold.
+    # --------------------------------------------------
+
+    # np.argwhere produces anchor-then-class ordering.
+    candidates = np.argwhere(scores > score_thresh)
+
+    if len(candidates) == 0:
+        return empty_result()
+
+    anchor_idx = candidates[:, 0]
+    candidate_labels = candidates[:, 1]
+
+    # Extract confidence scores for all candidates.
+    candidate_scores = scores[anchor_idx, candidate_labels]
+
+    # --------------------------------------------------
+    # 2. Keep the top-k highest-scoring candidates.
+    # --------------------------------------------------
+
+    # Stable sorting preserves anchor-then-class ordering for tied scores.
+    order = np.argsort(-candidate_scores, kind="stable")[:top_k]
+
+    anchor_idx = anchor_idx[order]
+    candidate_labels = candidate_labels[order]
+    candidate_scores = candidate_scores[order]
+
+    # --------------------------------------------------
+    # 3. Decode predicted boxes relative to their anchors.
+    # --------------------------------------------------
+
+    decoded_boxes = decode_boxes(
+        deltas[anchor_idx],
+        anchors[anchor_idx]
+    )
+
+    # --------------------------------------------------
+    # 4. Clip bounding-box coordinates to image boundaries.
+    # --------------------------------------------------
+
+    decoded_boxes = np.clip(
+        decoded_boxes,
+        0.0,
+        float(size)
+    ).astype(np.float64)
+
+    # --------------------------------------------------
+    # 5. Apply per-class Non-Maximum Suppression.
+    # --------------------------------------------------
+
+    # Maintain candidate positions rather than appending class-wise results.
+    # This preserves the original global candidate order across classes.
+    keep_mask = np.zeros(len(candidate_scores), dtype=bool)
+
+    if use_nms:
+
+        # Process classes in increasing class-index order.
+        for cls in range(scores.shape[1]):
+
+            # Find candidates belonging to the current class.
+            class_positions = np.flatnonzero(candidate_labels == cls)
+
+            if len(class_positions) == 0:
+                continue
+
+            # Run NMS independently for this class.
+            class_keep = nms(
+                decoded_boxes[class_positions],
+                candidate_scores[class_positions],
+                iou_thresh
+            )
+
+            # Mark surviving candidates.
+            keep_mask[class_positions[class_keep]] = True
+
+    else:
+        # Keep every candidate when NMS is disabled.
+        keep_mask[:] = True
+
+    # --------------------------------------------------
+    # 6. Sort surviving detections by descending score.
+    # --------------------------------------------------
+
+    # Survivors retain their top-k ranking order.
+    # Stable sorting ensures earlier candidates win score ties.
+    survivors = np.flatnonzero(keep_mask)
+
+    if len(survivors) == 0:
+        return empty_result()
+
+    final_order = np.argsort(
+        -candidate_scores[survivors],
+        kind="stable"
+    )
+
+    # --------------------------------------------------
+    # 7. Limit the number of final detections.
+    # --------------------------------------------------
+
+    final_idx = survivors[final_order[:max_det]]
+
+    # Return the final detections.
+    boxes = decoded_boxes[final_idx].astype(np.float64)
+    det_scores = candidate_scores[final_idx].copy()
+    labels = candidate_labels[final_idx].astype(np.int64)
+
+    return boxes, det_scores, labels
+
