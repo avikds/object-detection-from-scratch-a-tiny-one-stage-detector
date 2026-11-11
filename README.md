@@ -32,6 +32,7 @@ python scaffold.py
 - [x] **20.** predict_raw
 - [x] **21.** nms
 - [x] **22.** postprocess
+- [x] **23.** detect
 
 ---
 

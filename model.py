@@ -1505,3 +1505,41 @@ def postprocess(scores, deltas, anchors, size, score_thresh=0.05,
 
     return boxes, det_scores, labels
 
+# Step 23 - detect
+def detect(model, images, anchors, size=32, **post_kw):
+    """
+    Run the complete object detection inference pipeline.
+
+    Args:
+        model: Trained TinyDetector model.
+        images: NumPy image array of shape (N, 1, H, W).
+        anchors: Anchor boxes of shape (A, 4).
+        size: Image size used for clipping predicted boxes.
+        **post_kw: Additional arguments passed to postprocess().
+
+    Returns:
+        A list of (boxes, scores, labels) tuples, one per image.
+    """
+
+    # Run the model once over all images using batched inference.
+    scores, deltas = predict_raw(model, images)
+
+    # Store the final detections for each image.
+    detections = []
+
+    # Apply postprocessing independently to every image.
+    for i in range(len(images)):
+
+        result = postprocess(
+            scores[i],
+            deltas[i],
+            anchors,
+            size,
+            **post_kw
+        )
+
+        detections.append(result)
+
+    # Return detections in the original image order.
+    return detections
+
