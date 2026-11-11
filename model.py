@@ -326,3 +326,53 @@ def make_scene(rng, size=32, max_objects=4, r_range=(3.0, 8.0),
 
     return image, boxes, labels
 
+# Step 6 - make_dataset
+DATA_STREAM = 101
+
+
+def make_dataset(n, seed, size=32, **scene_kw):
+    """
+    Generate a dataset of synthetic grayscale scenes.
+
+    Args:
+        n: Number of scenes to generate.
+        seed: Random seed for reproducibility.
+        size: Height and width of each image.
+        **scene_kw: Additional keyword arguments passed to make_scene().
+
+    Returns:
+        images: Float32 NumPy array of shape (n, 1, size, size).
+        boxes: List containing each scene's bounding-box array.
+        labels: List containing each scene's class-label array.
+    """
+
+    # Create an independent random generator for dataset generation.
+    rng = np.random.default_rng([DATA_STREAM, seed])
+
+    # Allocate the image array.
+    # The channel dimension is included for compatibility with convolutional networks.
+    images = np.empty((n, 1, size, size), dtype=np.float32)
+
+    # Store bounding boxes and labels separately for each scene.
+    boxes = []
+    labels = []
+
+    # Generate n scenes using the same random generator.
+    for i in range(n):
+
+        # Generate one scene using the previously implemented function.
+        image, scene_boxes, scene_labels = make_scene(
+            rng,
+            size=size,
+            **scene_kw
+        )
+
+        # Store the image in the corresponding dataset position.
+        images[i, 0] = image
+
+        # Append the scene's bounding boxes and labels.
+        boxes.append(scene_boxes)
+        labels.append(scene_labels)
+
+    return images, boxes, labels
+
