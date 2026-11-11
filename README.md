@@ -11,6 +11,7 @@ python scaffold.py
 ## Steps
 
 - [x] **1.** box_area
+- [x] **2.** box_iou
 
 ---
 
