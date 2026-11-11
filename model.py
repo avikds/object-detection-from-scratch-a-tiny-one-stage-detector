@@ -1713,3 +1713,184 @@ def average_precision(tp, scores, n_gt):
     # Return the mean interpolated precision.
     return float(np.mean(interpolated_precision))
 
+# Step 26 - evaluate_map
+IOU_THRESHOLDS = np.round(np.arange(0.5, 0.96, 0.05), 2)
+
+
+def evaluate_map(detections, gt_boxes, gt_labels, num_classes,
+                 iou_thresholds=IOU_THRESHOLDS):
+    """
+    Evaluate object detection performance using COCO-style mAP.
+
+    Args:
+        detections: List of (boxes, scores, labels) tuples, one per image.
+        gt_boxes: List of ground-truth bounding-box arrays, one per image.
+        gt_labels: List of ground-truth class-label arrays, one per image.
+        num_classes: Number of object classes.
+        iou_thresholds: IoU thresholds used for AP evaluation.
+
+    Returns:
+        Dictionary containing:
+            ap: Float64 array of shape (num_classes, num_thresholds).
+            map: Mean AP across all classes and thresholds.
+            map50: Mean AP at IoU 0.50.
+            map75: Mean AP at IoU 0.75.
+
+        Classes without ground-truth objects receive NaN AP values.
+        All values except the AP array are Python floats.
+    """
+
+    # Convert IoU thresholds into a NumPy array.
+    iou_thresholds = np.asarray(iou_thresholds, dtype=np.float64)
+
+    # Validate the number of images.
+    if not (len(detections) == len(gt_boxes) == len(gt_labels)):
+        raise ValueError(
+            "detections, gt_boxes, and gt_labels must have equal lengths"
+        )
+
+    # Validate IoU thresholds.
+    if iou_thresholds.ndim != 1:
+        raise ValueError("iou_thresholds must be one-dimensional")
+
+    # Initialize the AP array with NaN values.
+    # Shape: (num_classes, num_thresholds)
+    ap = np.full(
+        (num_classes, len(iou_thresholds)),
+        np.nan,
+        dtype=np.float64
+    )
+
+    # --------------------------------------------------
+    # Evaluate each object class independently.
+    # --------------------------------------------------
+
+    for c in range(num_classes):
+
+        # Count the total ground-truth objects belonging to class c.
+        n_gt = sum(
+            np.sum(np.asarray(labels) == c)
+            for labels in gt_labels
+        )
+
+        # Classes without ground-truth objects receive NaN everywhere.
+        if n_gt == 0:
+            continue
+
+        # --------------------------------------------------
+        # Evaluate at every IoU threshold.
+        # --------------------------------------------------
+
+        for t_idx, iou_thresh in enumerate(iou_thresholds):
+
+            # Collect true-positive flags and confidence scores
+            # from every image.
+            all_tp = []
+            all_scores = []
+
+            # Process images in their original dataset order.
+            for det, boxes, labels in zip(
+                detections, gt_boxes, gt_labels
+            ):
+
+                # Unpack detections for the current image.
+                det_boxes, det_scores, det_labels = det
+
+                # Convert the image annotations to NumPy arrays.
+                boxes = np.asarray(boxes, dtype=np.float64)
+                labels = np.asarray(labels, dtype=np.int64)
+
+                # Convert the predictions to NumPy arrays.
+                det_boxes = np.asarray(det_boxes, dtype=np.float64)
+                det_scores = np.asarray(det_scores, dtype=np.float64)
+                det_labels = np.asarray(det_labels, dtype=np.int64)
+
+                # Select detections belonging to the current class.
+                det_idx = np.flatnonzero(det_labels == c)
+
+                # Select ground-truth boxes belonging to the current class.
+                gt_idx = np.flatnonzero(labels == c)
+
+                # Retrieve the corresponding predictions and scores.
+                class_det_boxes = det_boxes[det_idx]
+                class_det_scores = det_scores[det_idx]
+
+                # Retrieve the corresponding ground-truth boxes.
+                class_gt_boxes = boxes[gt_idx]
+
+                # Sort detections by descending confidence.
+                # Stable sorting preserves the original order for tied scores.
+                order = np.argsort(
+                    -class_det_scores,
+                    kind="stable"
+                )
+
+                class_det_boxes = class_det_boxes[order]
+                class_det_scores = class_det_scores[order]
+
+                # Greedily match detections to ground-truth boxes.
+                tp = match_detections(
+                    class_det_boxes,
+                    class_gt_boxes,
+                    iou_thresh
+                )
+
+                # Collect results across images.
+                all_tp.append(tp)
+                all_scores.append(class_det_scores)
+
+            # Combine detections from all images.
+            pooled_tp = np.concatenate(all_tp)
+            pooled_scores = np.concatenate(all_scores)
+
+            # Calculate 101-point interpolated average precision.
+            ap[c, t_idx] = average_precision(
+                pooled_tp,
+                pooled_scores,
+                int(n_gt)
+            )
+
+    # --------------------------------------------------
+    # Calculate overall mean Average Precision.
+    # --------------------------------------------------
+
+    def safe_nanmean(values):
+        """Calculate the mean while ignoring NaN values."""
+        values = np.asarray(values, dtype=np.float64)
+        valid_values = values[~np.isnan(values)]
+
+        if len(valid_values) == 0:
+            return float("nan")
+
+        return float(np.mean(valid_values))
+
+    # Mean AP across all classes and IoU thresholds.
+    mean_ap = safe_nanmean(ap)
+
+    # --------------------------------------------------
+    # Calculate mAP at IoU 0.50 and 0.75.
+    # --------------------------------------------------
+
+    def get_threshold_map(threshold):
+        """Calculate mean AP for a specified IoU threshold."""
+        indices = np.flatnonzero(
+            np.isclose(iou_thresholds, threshold, atol=1e-8, rtol=0.0)
+        )
+
+        # Return NaN if the requested threshold is unavailable.
+        if len(indices) == 0:
+            return float("nan")
+
+        return safe_nanmean(ap[:, indices[0]])
+
+    map50 = get_threshold_map(0.50)
+    map75 = get_threshold_map(0.75)
+
+    # Return the evaluation results.
+    return {
+        "ap": ap,
+        "map": mean_ap,
+        "map50": map50,
+        "map75": map75
+    }
+
