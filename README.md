@@ -23,6 +23,7 @@ python scaffold.py
 - [x] **11.** build_targets
 - [x] **12.** Conv
 - [x] **13.** prior_bias
+- [x] **14.** flatten_head
 
 ---
 

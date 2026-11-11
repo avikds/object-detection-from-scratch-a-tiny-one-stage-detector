@@ -815,3 +815,35 @@ def prior_bias(pi):
     # Calculate and return the logit bias.
     return float(-math.log((1.0 - pi) / pi))
 
+# Step 14 - flatten_head
+def flatten_head(t, k):
+    """
+    Reshape a detection head output into one row per anchor.
+
+    Args:
+        t: PyTorch tensor of shape (N, A*k, G, G).
+        k: Number of output values per anchor.
+
+    Returns:
+        PyTorch tensor of shape (N, G*G*A, k).
+    """
+
+    # Get the input tensor dimensions.
+    N, C, G, _ = t.shape
+
+    # Calculate the number of anchors per feature-map cell.
+    A = C // k
+
+    # Separate the anchor and output dimensions.
+    # Shape: (N, A, k, G, G)
+    t = t.reshape(N, A, k, G, G)
+
+    # Rearrange dimensions to:
+    # (N, G, G, A, k)
+    # This preserves row-major feature-map and anchor ordering.
+    t = t.permute(0, 3, 4, 1, 2)
+
+    # Flatten the spatial and anchor dimensions.
+    # Final shape: (N, G*G*A, k)
+    return t.reshape(N, G * G * A, k)
+
