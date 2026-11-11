@@ -1615,3 +1615,101 @@ def match_detections(det_boxes, gt_boxes, iou_thresh):
 
     return tp
 
+# Step 25 - average_precision
+def average_precision(tp, scores, n_gt):
+    """
+    Calculate 101-point interpolated Average Precision.
+
+    Args:
+        tp: Boolean array indicating true-positive detections.
+        scores: Confidence scores corresponding to detections.
+        n_gt: Total number of ground-truth objects.
+
+    Returns:
+        Average precision as a Python float.
+
+    Raises:
+        ValueError: If n_gt is zero or negative.
+    """
+
+    # Validate the number of ground-truth objects.
+    if n_gt <= 0:
+        raise ValueError("n_gt must be greater than zero")
+
+    # Convert inputs to NumPy arrays.
+    tp = np.asarray(tp, dtype=bool)
+    scores = np.asarray(scores, dtype=np.float64)
+
+    # Validate input dimensions.
+    if tp.ndim != 1 or scores.ndim != 1:
+        raise ValueError("tp and scores must be one-dimensional arrays")
+
+    if len(tp) != len(scores):
+        raise ValueError("tp and scores must have the same length")
+
+    # Return zero AP when there are no detections.
+    if len(tp) == 0:
+        return 0.0
+
+    # --------------------------------------------------
+    # 1. Sort detections by decreasing confidence score.
+    # --------------------------------------------------
+
+    # Stable sorting preserves original order when scores are tied.
+    order = np.argsort(-scores, kind="stable")
+
+    tp = tp[order]
+
+    # --------------------------------------------------
+    # 2. Calculate cumulative true and false positives.
+    # --------------------------------------------------
+
+    cumulative_tp = np.cumsum(tp, dtype=np.float64)
+    cumulative_fp = np.cumsum(~tp, dtype=np.float64)
+
+    # --------------------------------------------------
+    # 3. Calculate recall and precision at each detection.
+    # --------------------------------------------------
+
+    recall = cumulative_tp / n_gt
+
+    precision = cumulative_tp / (
+        cumulative_tp + cumulative_fp
+    )
+
+    # --------------------------------------------------
+    # 4. Construct the precision envelope.
+    # --------------------------------------------------
+
+    # Each precision value becomes the maximum precision
+    # observed at that rank or any later rank.
+    precision_envelope = np.maximum.accumulate(
+        precision[::-1]
+    )[::-1]
+
+    # --------------------------------------------------
+    # 5. Calculate 101-point interpolated average precision.
+    # --------------------------------------------------
+
+    recall_levels = np.linspace(0.0, 1.0, 101)
+
+    interpolated_precision = np.zeros(101, dtype=np.float64)
+
+    # Recall is non-decreasing, so searchsorted finds
+    # the first detection whose recall reaches each level.
+    indices = np.searchsorted(
+        recall,
+        recall_levels,
+        side="left"
+    )
+
+    # Assign precision where the required recall level is reached.
+    valid = indices < len(recall)
+
+    interpolated_precision[valid] = precision_envelope[
+        indices[valid]
+    ]
+
+    # Return the mean interpolated precision.
+    return float(np.mean(interpolated_precision))
+

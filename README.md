@@ -34,6 +34,7 @@ python scaffold.py
 - [x] **22.** postprocess
 - [x] **23.** detect
 - [x] **24.** match_detections
+- [x] **25.** average_precision
 
 ---
 
