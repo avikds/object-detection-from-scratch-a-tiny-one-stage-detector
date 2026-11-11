@@ -16,6 +16,7 @@ python scaffold.py
 - [x] **4.** mask_to_box
 - [x] **5.** make_scene
 - [x] **6.** make_dataset
+- [x] **7.** make_anchors
 
 ---
 

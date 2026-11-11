@@ -376,3 +376,59 @@ def make_dataset(n, seed, size=32, **scene_kw):
 
     return images, boxes, labels
 
+# Step 7 - make_anchors
+def make_anchors(grid, stride, sizes):
+    """
+    Generate square anchor boxes for a square feature map.
+
+    Args:
+        grid: Number of rows and columns in the feature map.
+        stride: Distance between neighboring feature-map cell centers.
+        sizes: Sequence of anchor side lengths.
+
+    Returns:
+        A float64 NumPy array of shape (grid * grid * len(sizes), 4).
+        Each anchor is represented as [x0, y0, x1, y1].
+    """
+
+    # Convert anchor sizes to a float64 NumPy array.
+    sizes = np.asarray(sizes, dtype=np.float64)
+
+    # Generate feature-map row and column indices.
+    rows, cols = np.meshgrid(
+        np.arange(grid),
+        np.arange(grid),
+        indexing="ij"
+    )
+
+    # Calculate anchor center coordinates in image pixels.
+    cx = (cols.ravel() + 0.5) * stride
+    cy = (rows.ravel() + 0.5) * stride
+
+    # Combine the center coordinates into (grid * grid, 2).
+    centers = np.stack((cx, cy), axis=1)
+
+    # Calculate half the side length of each anchor.
+    half_sizes = sizes / 2.0
+
+    # Calculate top-left corners for every center and anchor size.
+    top_left = (
+        centers[:, None, :]
+        - half_sizes[None, :, None]
+    )
+
+    # Calculate bottom-right corners for every center and anchor size.
+    bottom_right = (
+        centers[:, None, :]
+        + half_sizes[None, :, None]
+    )
+
+    # Combine coordinates into [x0, y0, x1, y1].
+    anchors = np.concatenate(
+        (top_left, bottom_right),
+        axis=2
+    )
+
+    # Flatten while preserving row-major cell order and sizes innermost.
+    return anchors.reshape(-1, 4).astype(np.float64)
+
