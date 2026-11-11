@@ -1275,3 +1275,69 @@ def predict_raw(model, images, batch=32):
 
     return scores, deltas
 
+# Step 21 - nms
+def nms(boxes, scores, iou_thresh=0.5):
+    """
+    Perform greedy Non-Maximum Suppression.
+
+    Args:
+        boxes: NumPy array of shape (K, 4), containing bounding boxes.
+        scores: NumPy array of shape (K,), containing confidence scores.
+        iou_thresh: IoU threshold for suppressing overlapping boxes.
+
+    Returns:
+        An int64 NumPy array containing the indices of kept boxes,
+        ordered by descending confidence score.
+    """
+
+    # Convert inputs to NumPy arrays.
+    boxes = np.asarray(boxes, dtype=np.float64)
+    scores = np.asarray(scores)
+
+    # Validate input shapes.
+    if boxes.ndim != 2 or boxes.shape[1] != 4:
+        raise ValueError("boxes must have shape (K, 4)")
+
+    if scores.ndim != 1 or scores.shape[0] != boxes.shape[0]:
+        raise ValueError("scores must have shape (K,) matching boxes")
+
+    # Return an empty int64 array when there are no boxes.
+    if len(boxes) == 0:
+        return np.empty(0, dtype=np.int64)
+
+    # Sort boxes by descending confidence score.
+    # Stable sorting ensures lower original indices come first when scores tie.
+    order = np.argsort(-scores, kind="stable")
+
+    # Store the indices of boxes that survive suppression.
+    keep = []
+
+    # Greedy Non-Maximum Suppression.
+    while len(order) > 0:
+
+        # Select the highest-scoring remaining box.
+        current = order[0]
+
+        # Keep the selected box.
+        keep.append(current)
+
+        # Get the indices of all remaining boxes.
+        remaining = order[1:]
+
+        # Stop if no boxes remain.
+        if len(remaining) == 0:
+            break
+
+        # Calculate IoU between the selected box and remaining boxes.
+        ious = box_iou(
+            boxes[current:current + 1],
+            boxes[remaining]
+        )[0]
+
+        # Suppress boxes whose IoU is strictly greater than the threshold.
+        # Boxes with IoU equal to the threshold are retained.
+        order = remaining[ious <= iou_thresh]
+
+    # Return the kept indices as an int64 NumPy array.
+    return np.asarray(keep, dtype=np.int64)
+

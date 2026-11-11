@@ -30,6 +30,7 @@ python scaffold.py
 - [x] **18.** detection_loss
 - [x] **19.** Trainer
 - [x] **20.** predict_raw
+- [x] **21.** nms
 
 ---
 
