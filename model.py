@@ -1200,3 +1200,78 @@ class Trainer:
         # Return loss history as float64 to preserve clean rounded values.
         return np.asarray(history, dtype=np.float64).reshape(steps, 3)
 
+# Step 20 - predict_raw
+def predict_raw(model, images, batch=32):
+    """
+    Run the detector over a NumPy image array in batches.
+
+    Args:
+        model: Trained TinyDetector model.
+        images: NumPy array of shape (N, 1, H, W).
+        batch: Number of images processed per batch.
+
+    Returns:
+        scores: Float32 NumPy array of shape (N, A, C),
+                containing sigmoid classification probabilities.
+        deltas: Float32 NumPy array of shape (N, A, 4),
+                containing predicted bounding-box deltas.
+    """
+
+    # Validate the batch size.
+    if batch <= 0:
+        raise ValueError("batch must be a positive integer")
+
+    # Convert images to a NumPy array if necessary.
+    images = np.asarray(images)
+
+    # Determine the model's device.
+    device = next(model.parameters()).device
+
+    # Store the original training/evaluation state.
+    was_training = model.training
+
+    # Switch the model to evaluation mode.
+    model.eval()
+
+    scores_list = []
+    deltas_list = []
+
+    try:
+        # Disable gradient calculations during inference.
+        with torch.no_grad():
+
+            # Process images in consecutive batches.
+            for start in range(0, len(images), batch):
+
+                # Extract the current batch.
+                batch_images = torch.as_tensor(
+                    images[start:start + batch],
+                    dtype=torch.float32,
+                    device=device
+                )
+
+                # Forward pass through the detector.
+                cls_logits, box_deltas = model(batch_images)
+
+                # Convert classification logits into probabilities.
+                probabilities = torch.sigmoid(cls_logits)
+
+                # Convert outputs into NumPy arrays.
+                scores_list.append(
+                    probabilities.detach().cpu().numpy()
+                )
+
+                deltas_list.append(
+                    box_deltas.detach().cpu().numpy()
+                )
+
+    finally:
+        # Restore the model's original training/evaluation state.
+        model.train(was_training)
+
+    # Concatenate batch outputs in their original image order.
+    scores = np.concatenate(scores_list, axis=0)
+    deltas = np.concatenate(deltas_list, axis=0)
+
+    return scores, deltas
+

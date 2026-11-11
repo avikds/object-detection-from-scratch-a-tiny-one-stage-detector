@@ -29,6 +29,7 @@ python scaffold.py
 - [x] **17.** smooth_l1
 - [x] **18.** detection_loss
 - [x] **19.** Trainer
+- [x] **20.** predict_raw
 
 ---
 
