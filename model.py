@@ -195,3 +195,134 @@ def mask_to_box(mask):
     # Return the bounding box as a float64 NumPy array.
     return np.array([x0, y0, x1, y1], dtype=np.float64)
 
+# Step 5 - make_scene
+def make_scene(rng, size=32, max_objects=4, r_range=(3.0, 8.0),
+               contrast=(0.25, 0.7), noise=0.08):
+    """
+    Generate one synthetic grayscale scene with randomly placed objects.
+
+    Args:
+        rng: NumPy random Generator instance.
+        size: Height and width of the square image.
+        max_objects: Maximum number of objects to generate.
+        r_range: Minimum and maximum object radius.
+        contrast: Minimum and maximum object intensity contrast.
+        noise: Standard deviation of background Gaussian noise.
+
+    Returns:
+        image: float32 array of shape (size, size).
+        boxes: float64 array of shape (K, 4).
+        labels: int64 array of shape (K,).
+    """
+
+    # --------------------------------------------------
+    # 1. Generate the sloped background.
+    # --------------------------------------------------
+
+    # Draw background level first, followed by vertical and horizontal slopes.
+    level = rng.uniform(0.1, 0.4)
+    gy, gx = rng.uniform(-0.15, 0.15, 2)
+
+    # Create normalized pixel-center coordinates.
+    ys, xs = np.mgrid[0:size, 0:size] / size - 0.5
+
+    # Initialize the image with a sloped background.
+    image = level + gy * ys + gx * xs
+
+    # --------------------------------------------------
+    # 2. Determine the number of objects.
+    # --------------------------------------------------
+
+    n = int(rng.integers(1, max_objects + 1))
+
+    boxes = []
+    labels = []
+
+    # Allow at most 40 placement attempts.
+    for _ in range(40):
+
+        # Stop once the requested number of objects is placed.
+        if len(boxes) >= n:
+            break
+
+        # Draw the shape type: 0 = circle, 1 = square, 2 = triangle.
+        kind = int(rng.integers(0, 3))
+
+        # Draw the object's radius.
+        r = rng.uniform(*r_range)
+
+        # Draw the object's center coordinates.
+        cx, cy = rng.uniform(r, size - r, 2)
+
+        # Generate the object's Boolean mask.
+        mask = shape_mask(kind, cx, cy, r, size)
+
+        # Calculate the tight bounding box of the object.
+        box = mask_to_box(mask)
+
+        # Skip objects containing fewer than four pixels.
+        if np.sum(mask) < 4:
+            continue
+
+        # --------------------------------------------------
+        # Check overlap with previously placed objects.
+        # --------------------------------------------------
+
+        if len(boxes) > 0:
+
+            # Expand each existing box by one pixel on every side.
+            existing_boxes = np.asarray(boxes, dtype=np.float64)
+            grown_boxes = existing_boxes + np.array(
+                [-1.0, -1.0, 1.0, 1.0],
+                dtype=np.float64
+            )
+
+            # Calculate IoU between the candidate and expanded boxes.
+            overlaps = box_iou(
+                box.reshape(1, 4),
+                grown_boxes
+            )
+
+            # Reject the candidate if any IoU is greater than zero.
+            if np.any(overlaps > 0):
+                continue
+
+        # --------------------------------------------------
+        # Draw the object with random brightness or darkness.
+        # --------------------------------------------------
+
+        # Objects are bright with probability 0.7 and dark otherwise.
+        sign = 1.0 if rng.random() < 0.7 else -1.0
+
+        # Draw the object's contrast.
+        intensity = rng.uniform(*contrast)
+
+        # Apply the intensity change only inside the object's mask.
+        image[mask] += sign * intensity
+
+        # Store the object's bounding box and class label.
+        boxes.append(box)
+        labels.append(kind)
+
+    # --------------------------------------------------
+    # 3. Add Gaussian noise to the entire image.
+    # --------------------------------------------------
+
+    image += rng.normal(0.0, noise, (size, size))
+
+    # Clip all pixel intensities to the valid [0, 1] range.
+    image = np.clip(image, 0.0, 1.0)
+
+    # --------------------------------------------------
+    # 4. Convert outputs to the required data types.
+    # --------------------------------------------------
+
+    image = image.astype(np.float32)
+
+    # Ensure boxes always have shape (K, 4), including when K = 0.
+    boxes = np.asarray(boxes, dtype=np.float64).reshape(-1, 4)
+
+    labels = np.asarray(labels, dtype=np.int64)
+
+    return image, boxes, labels
+
