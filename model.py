@@ -1076,3 +1076,127 @@ def detection_loss(cls_logits, box_deltas, cls_t, box_t, pos, valid,
 
     return total, cls, box
 
+# Step 19 - Trainer
+TRAIN_STREAM = 303
+
+
+class Trainer:
+    def __init__(self, model, lr=3e-3, gamma=2.0, alpha=0.25,
+                 box_weight=1.0, b1=0.9, b2=0.999, eps=1e-8):
+
+        # Store model and training hyperparameters.
+        self.model = model
+        self.lr = lr
+        self.gamma = gamma
+        self.alpha = alpha
+        self.box_weight = box_weight
+
+        # Initialize the Adam optimizer.
+        self.opt = torch.optim.Adam(
+            model.parameters(),
+            lr=lr,
+            betas=(b1, b2),
+            eps=eps
+        )
+
+    def fit(self, images, targets, steps, batch=32, seed=0, cosine=False):
+        """
+        Train the detector using Adam and randomly sampled minibatches.
+
+        Returns:
+            Float64 NumPy array of shape (steps, 3), containing
+            total, classification, and box losses.
+        """
+
+        # Create an independent random generator for minibatch ordering.
+        rng = np.random.default_rng([TRAIN_STREAM, seed])
+
+        # Store the training loss history.
+        history = []
+
+        # Set the model to training mode.
+        self.model.train()
+
+        for i in range(steps):
+
+            # Sample minibatch indices without replacement.
+            idx = rng.choice(
+                len(images),
+                batch,
+                replace=False
+            )
+
+            # Set the learning rate.
+            if cosine:
+                current_lr = self.lr * (
+                    0.5 + 0.5 * math.cos(math.pi * i / steps)
+                )
+            else:
+                current_lr = self.lr
+
+            # Update the learning rate for every parameter group.
+            for param_group in self.opt.param_groups:
+                param_group["lr"] = current_lr
+
+            # Convert minibatch images to PyTorch tensors.
+            x = torch.as_tensor(
+                images[idx],
+                dtype=torch.float32
+            )
+
+            # Convert minibatch targets to PyTorch tensors.
+            cls_t = torch.as_tensor(
+                targets["cls"][idx],
+                dtype=torch.float32
+            )
+
+            box_t = torch.as_tensor(
+                targets["box"][idx],
+                dtype=torch.float32
+            )
+
+            pos = torch.as_tensor(
+                targets["pos"][idx],
+                dtype=torch.float32
+            )
+
+            valid = torch.as_tensor(
+                targets["valid"][idx],
+                dtype=torch.float32
+            )
+
+            # Clear gradients from the previous iteration.
+            self.opt.zero_grad()
+
+            # Forward pass.
+            cls_logits, box_deltas = self.model(x)
+
+            # Calculate the combined detection loss.
+            total, cls, box = detection_loss(
+                cls_logits,
+                box_deltas,
+                cls_t,
+                box_t,
+                pos,
+                valid,
+                gamma=self.gamma,
+                alpha=self.alpha,
+                box_weight=self.box_weight
+            )
+
+            # Record losses before updating model parameters.
+            history.append([
+                total.item(),
+                cls.item(),
+                box.item()
+            ])
+
+            # Backpropagation.
+            total.backward()
+
+            # Update model parameters using Adam.
+            self.opt.step()
+
+        # Return loss history as float64 to preserve clean rounded values.
+        return np.asarray(history, dtype=np.float64).reshape(steps, 3)
+
