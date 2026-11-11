@@ -790,3 +790,28 @@ class Conv(nn.Module):
             padding=1
         )
 
+# Step 13 - prior_bias
+import math
+
+
+def prior_bias(pi):
+    """
+    Calculate the logit bias corresponding to a prior probability.
+
+    Args:
+        pi: Prior probability, which must satisfy 0 < pi < 1.
+
+    Returns:
+        The corresponding logit bias as a float.
+
+    Raises:
+        ValueError: If pi is not strictly between 0 and 1.
+    """
+
+    # Validate the prior probability.
+    if not 0.0 < pi < 1.0:
+        raise ValueError("pi must satisfy 0 < pi < 1")
+
+    # Calculate and return the logit bias.
+    return float(-math.log((1.0 - pi) / pi))
+

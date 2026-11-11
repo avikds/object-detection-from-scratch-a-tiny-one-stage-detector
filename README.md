@@ -22,6 +22,7 @@ python scaffold.py
 - [x] **10.** assign_targets
 - [x] **11.** build_targets
 - [x] **12.** Conv
+- [x] **13.** prior_bias
 
 ---
 
