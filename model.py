@@ -432,3 +432,58 @@ def make_anchors(grid, stride, sizes):
     # Flatten while preserving row-major cell order and sizes innermost.
     return anchors.reshape(-1, 4).astype(np.float64)
 
+# Step 8 - encode_boxes
+def encode_boxes(gt, anchors):
+    """
+    Encode ground-truth boxes relative to their corresponding anchors.
+
+    Args:
+        gt: Ground-truth boxes of shape (N, 4).
+        anchors: Anchor boxes of shape (N, 4).
+
+    Returns:
+        Float64 NumPy array of shape (N, 4), containing
+        (tx, ty, tw, th) regression targets.
+    """
+
+    # Convert inputs to float64 NumPy arrays.
+    gt = np.asarray(gt, dtype=np.float64)
+    anchors = np.asarray(anchors, dtype=np.float64)
+
+    # Validate input shapes.
+    if gt.ndim != 2 or gt.shape[1] != 4:
+        raise ValueError("gt must have shape (N, 4)")
+
+    if anchors.ndim != 2 or anchors.shape[1] != 4:
+        raise ValueError("anchors must have shape (N, 4)")
+
+    if gt.shape != anchors.shape:
+        raise ValueError("gt and anchors must have the same shape")
+
+    # Calculate ground-truth box widths and heights.
+    gt_w = gt[:, 2] - gt[:, 0]
+    gt_h = gt[:, 3] - gt[:, 1]
+
+    # Calculate anchor widths and heights.
+    anchor_w = anchors[:, 2] - anchors[:, 0]
+    anchor_h = anchors[:, 3] - anchors[:, 1]
+
+    # Calculate ground-truth box centers.
+    gt_cx = (gt[:, 0] + gt[:, 2]) / 2.0
+    gt_cy = (gt[:, 1] + gt[:, 3]) / 2.0
+
+    # Calculate anchor box centers.
+    anchor_cx = (anchors[:, 0] + anchors[:, 2]) / 2.0
+    anchor_cy = (anchors[:, 1] + anchors[:, 3]) / 2.0
+
+    # Encode center offsets relative to anchor dimensions.
+    tx = (gt_cx - anchor_cx) / anchor_w
+    ty = (gt_cy - anchor_cy) / anchor_h
+
+    # Encode width and height ratios logarithmically.
+    tw = np.log(gt_w / anchor_w)
+    th = np.log(gt_h / anchor_h)
+
+    # Combine the four regression targets.
+    return np.column_stack((tx, ty, tw, th)).astype(np.float64)
+
