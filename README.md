@@ -26,6 +26,7 @@ python scaffold.py
 - [x] **14.** flatten_head
 - [x] **15.** TinyDetector
 - [x] **16.** focal_loss
+- [x] **17.** smooth_l1
 
 ---
 

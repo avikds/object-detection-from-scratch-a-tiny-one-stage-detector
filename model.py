@@ -982,3 +982,42 @@ def focal_loss(logits, targets, valid, gamma=2.0, alpha=0.25):
     # Return the summed loss without normalization.
     return loss.sum()
 
+# Step 17 - smooth_l1
+def smooth_l1(pred, target, pos, beta=0.1):
+    """
+    Compute the summed Smooth L1 loss over positive anchors.
+
+    Args:
+        pred: Predicted box deltas of shape (N, A, 4).
+        target: Target box deltas of shape (N, A, 4).
+        pos: Positive-anchor mask of shape (N, A).
+        beta: Threshold separating quadratic and linear regions.
+
+    Returns:
+        Scalar PyTorch tensor containing the summed Smooth L1 loss.
+    """
+
+    # Calculate the absolute difference between predictions and targets.
+    d = torch.abs(pred - target)
+
+    # Apply the piecewise Smooth L1 loss.
+    # Quadratic region: 0.5 * d^2 / beta
+    # Linear region:    d - 0.5 * beta
+    loss = torch.where(
+        d < beta,
+        0.5 * d.pow(2) / beta,
+        d - 0.5 * beta
+    )
+
+    # Sum the loss across the four bounding-box coordinates.
+    loss = loss.sum(dim=-1)
+
+    # Convert the positive-anchor mask to match the prediction tensor.
+    pos_mask = pos.to(device=pred.device, dtype=pred.dtype)
+
+    # Keep losses only for positive anchors.
+    loss = loss * pos_mask
+
+    # Return the summed loss without normalization.
+    return loss.sum()
+
