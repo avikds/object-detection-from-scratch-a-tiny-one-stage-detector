@@ -24,6 +24,7 @@ python scaffold.py
 - [x] **12.** Conv
 - [x] **13.** prior_bias
 - [x] **14.** flatten_head
+- [x] **15.** TinyDetector
 
 ---
 

@@ -847,3 +847,86 @@ def flatten_head(t, k):
     # Final shape: (N, G*G*A, k)
     return t.reshape(N, G * G * A, k)
 
+# Step 15 - TinyDetector
+INIT_STREAM = 202
+
+
+class TinyDetector(nn.Module):
+    def __init__(self, num_classes, num_anchors, seed=0, width=32, pi=0.01):
+        super().__init__()
+
+        # Create an independent random generator for model initialization.
+        rng = np.random.default_rng([INIT_STREAM, seed])
+
+        # Store the number of object classes and anchors per feature-map cell.
+        self.num_classes = num_classes
+        self.num_anchors = num_anchors
+
+        # --------------------------------------------------
+        # 1. Build the five-layer convolutional backbone.
+        # --------------------------------------------------
+
+        self.backbone = nn.ModuleList([
+            Conv(1, width // 2, rng),
+            Conv(width // 2, width, rng, stride=2),
+            Conv(width, width, rng),
+            Conv(width, width, rng, stride=2),
+            Conv(width, width, rng)
+        ])
+
+        # --------------------------------------------------
+        # 2. Classification head.
+        # --------------------------------------------------
+
+        # Predict num_classes classification logits for each anchor.
+        # Initialize the classification bias using the prior probability.
+        self.cls_head = Conv(
+            width,
+            num_anchors * num_classes,
+            rng,
+            std=0.01,
+            bias=prior_bias(pi)
+        )
+
+        # --------------------------------------------------
+        # 3. Bounding-box regression head.
+        # --------------------------------------------------
+
+        # Predict four bounding-box regression values per anchor.
+        self.box_head = Conv(
+            width,
+            num_anchors * 4,
+            rng,
+            std=0.01
+        )
+
+    def forward(self, x):
+        """
+        Forward pass through the detector.
+
+        Args:
+            x: Input images of shape (N, 1, H, W).
+
+        Returns:
+            cls_logits: Classification logits of shape (N, G*G*A, C).
+            box_deltas: Bounding-box deltas of shape (N, G*G*A, 4).
+        """
+
+        # Apply each backbone convolution followed by ReLU activation.
+        for layer in self.backbone:
+            x = torch.relu(layer(x))
+
+        # Generate classification logits and flatten them into anchor order.
+        cls_logits = flatten_head(
+            self.cls_head(x),
+            self.num_classes
+        )
+
+        # Generate bounding-box regression predictions.
+        box_deltas = flatten_head(
+            self.box_head(x),
+            4
+        )
+
+        return cls_logits, box_deltas
+
