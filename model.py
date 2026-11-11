@@ -743,3 +743,50 @@ def build_targets(anchors, boxes_list, labels_list, num_classes, **assign_kw):
         "valid": np.stack(valid_targets, axis=0).astype(np.float32),
     }
 
+# Step 12 - Conv
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class Conv(nn.Module):
+    def __init__(self, c_in, c_out, rng, stride=1, std=None, bias=0.0):
+        super().__init__()
+
+        # Use He initialization by default.
+        if std is None:
+            std = np.sqrt(2.0 / (9.0 * c_in))
+
+        # Generate weights using the supplied NumPy random generator.
+        # Shape: (c_out, c_in, 3, 3)
+        weight = rng.normal(
+            0.0,
+            std,
+            (c_out, c_in, 3, 3)
+        ).astype(np.float32)
+
+        # Register weights as a trainable parameter BEFORE the bias.
+        self.w = nn.Parameter(torch.from_numpy(weight))
+
+        # Initialize the bias as a trainable float32 parameter.
+        self.b = nn.Parameter(
+            torch.full(
+                (c_out,),
+                float(bias),
+                dtype=torch.float32
+            )
+        )
+
+        # Store the convolution stride.
+        self.stride = stride
+
+    def forward(self, x):
+        # Apply 3×3 convolution with padding of 1.
+        return F.conv2d(
+            x,
+            self.w,
+            self.b,
+            stride=self.stride,
+            padding=1
+        )
+
