@@ -661,3 +661,85 @@ def assign_targets(anchors, gt_boxes, gt_labels, num_classes,
 
     return cls_t, box_t, pos, valid
 
+# Step 11 - build_targets
+def build_targets(anchors, boxes_list, labels_list, num_classes, **assign_kw):
+    """
+    Build classification and bounding-box targets for an entire dataset.
+
+    Args:
+        anchors: Array of shape (A, 4) containing anchor boxes.
+        boxes_list: List of ground-truth box arrays, one per image.
+        labels_list: List of ground-truth label arrays, one per image.
+        num_classes: Number of object classes.
+        **assign_kw: Additional arguments passed to assign_targets().
+
+    Returns:
+        Dictionary containing:
+            cls: Float32 array of shape (N, A, C).
+            box: Float32 array of shape (N, A, 4).
+            pos: Float32 array of shape (N, A).
+            valid: Float32 array of shape (N, A).
+    """
+
+    # Convert anchors to a NumPy array.
+    anchors = np.asarray(anchors, dtype=np.float64)
+
+    # Validate the anchor array.
+    if anchors.ndim != 2 or anchors.shape[1] != 4:
+        raise ValueError("anchors must have shape (A, 4)")
+
+    # Ensure boxes and labels contain the same number of images.
+    if len(boxes_list) != len(labels_list):
+        raise ValueError("boxes_list and labels_list must have equal lengths")
+
+    # Determine the dataset size and number of anchors.
+    N = len(boxes_list)
+    A = len(anchors)
+
+    # Initialize lists to collect targets for each image.
+    cls_targets = []
+    box_targets = []
+    pos_targets = []
+    valid_targets = []
+
+    # Process each image in the original dataset order.
+    for gt_boxes, gt_labels in zip(boxes_list, labels_list):
+
+        # Assign targets to all anchors for the current image.
+        cls_t, box_t, pos, valid = assign_targets(
+            anchors,
+            gt_boxes,
+            gt_labels,
+            num_classes,
+            **assign_kw
+        )
+
+        # Store classification targets.
+        cls_targets.append(cls_t)
+
+        # Store bounding-box regression targets.
+        box_targets.append(box_t)
+
+        # Convert positive-anchor indicators to float32.
+        pos_targets.append(pos.astype(np.float32))
+
+        # Convert valid-anchor indicators to float32.
+        valid_targets.append(valid.astype(np.float32))
+
+    # Stack the per-image targets into batch arrays.
+    # Handle an empty dataset while preserving the required dimensions.
+    if N == 0:
+        return {
+            "cls": np.empty((0, A, num_classes), dtype=np.float32),
+            "box": np.empty((0, A, 4), dtype=np.float32),
+            "pos": np.empty((0, A), dtype=np.float32),
+            "valid": np.empty((0, A), dtype=np.float32),
+        }
+
+    return {
+        "cls": np.stack(cls_targets, axis=0).astype(np.float32),
+        "box": np.stack(box_targets, axis=0).astype(np.float32),
+        "pos": np.stack(pos_targets, axis=0).astype(np.float32),
+        "valid": np.stack(valid_targets, axis=0).astype(np.float32),
+    }
+

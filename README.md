@@ -20,6 +20,7 @@ python scaffold.py
 - [x] **8.** encode_boxes
 - [x] **9.** decode_boxes
 - [x] **10.** assign_targets
+- [x] **11.** build_targets
 
 ---
 
