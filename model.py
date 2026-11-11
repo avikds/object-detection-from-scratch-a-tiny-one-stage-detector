@@ -1021,3 +1021,58 @@ def smooth_l1(pred, target, pos, beta=0.1):
     # Return the summed loss without normalization.
     return loss.sum()
 
+# Step 18 - detection_loss
+def detection_loss(cls_logits, box_deltas, cls_t, box_t, pos, valid,
+                   gamma=2.0, alpha=0.25, box_weight=1.0):
+    """
+    Combine classification and bounding-box regression losses.
+
+    Args:
+        cls_logits: Classification logits of shape (N, A, C).
+        box_deltas: Predicted box deltas of shape (N, A, 4).
+        cls_t: Classification targets of shape (N, A, C).
+        box_t: Bounding-box regression targets of shape (N, A, 4).
+        pos: Positive-anchor mask of shape (N, A).
+        valid: Valid-anchor mask of shape (N, A).
+        gamma: Focal loss gamma parameter.
+        alpha: Focal loss alpha parameter.
+        box_weight: Weight applied to the box regression loss.
+
+    Returns:
+        A tuple containing:
+            total: Combined detection loss.
+            cls: Normalized classification loss.
+            box: Normalized bounding-box regression loss.
+    """
+
+    # Count positive anchors across the entire minibatch.
+    # Clamp the count to at least 1 to avoid division by zero.
+    n_pos = torch.clamp(pos.sum(), min=1.0)
+
+    # Calculate the summed classification focal loss.
+    cls = focal_loss(
+        cls_logits,
+        cls_t,
+        valid,
+        gamma=gamma,
+        alpha=alpha
+    )
+
+    # Normalize classification loss by the number of positive anchors.
+    cls = cls / n_pos
+
+    # Calculate the summed Smooth L1 bounding-box regression loss.
+    box = smooth_l1(
+        box_deltas,
+        box_t,
+        pos
+    )
+
+    # Normalize bounding-box regression loss by the number of positive anchors.
+    box = box / n_pos
+
+    # Combine both normalized losses.
+    total = cls + box_weight * box
+
+    return total, cls, box
+
