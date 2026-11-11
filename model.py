@@ -1894,3 +1894,175 @@ def evaluate_map(detections, gt_boxes, gt_labels, num_classes,
         "map75": map75
     }
 
+# Step 27 - run_ablation
+MODEL_KEYS = ("pi", "width")
+TRAIN_KEYS = ("lr", "gamma", "alpha", "box_weight", "cosine")
+POST_KEYS = ("score_thresh", "iou_thresh", "top_k", "max_det", "use_nms")
+
+
+def run_ablation(variants, train, val, anchors, steps,
+                 seed=0, size=32, num_classes=3):
+    """
+    Train and evaluate one detector for each ablation variant.
+
+    Args:
+        variants: Dictionary mapping variant names to configuration dictionaries.
+        train: Tuple (images, targets) containing training data.
+        val: Tuple (images, boxes, labels) containing validation data.
+        anchors: NumPy array of anchor boxes.
+        steps: Number of training iterations.
+        seed: Shared random seed for initialization and minibatch ordering.
+        size: Image size.
+        num_classes: Number of object classes.
+
+    Returns:
+        Dictionary mapping each variant name to:
+            map: COCO-style mean Average Precision.
+            map50: Mean AP at IoU 0.50.
+            map75: Mean AP at IoU 0.75.
+            final_loss: Mean total loss over the last 10 training steps.
+    """
+
+    # --------------------------------------------------
+    # 1. Validate all variant configurations.
+    # --------------------------------------------------
+
+    allowed_keys = set(MODEL_KEYS + TRAIN_KEYS + POST_KEYS)
+
+    # Validate every variant before starting training.
+    for name, config in variants.items():
+
+        if not isinstance(config, dict):
+            raise ValueError(
+                f"Configuration for variant '{name}' must be a dictionary."
+            )
+
+        # Identify unsupported configuration keys.
+        unknown_keys = set(config.keys()) - allowed_keys
+
+        if unknown_keys:
+            raise ValueError(
+                f"Unknown configuration keys in variant '{name}': "
+                f"{sorted(unknown_keys)}"
+            )
+
+    # --------------------------------------------------
+    # 2. Unpack training and validation datasets.
+    # --------------------------------------------------
+
+    train_images, targets = train
+
+    val_images, val_boxes, val_labels = val
+
+    # Calculate the number of anchors per feature-map cell.
+    grid = size // 4
+
+    num_anchors = len(anchors) // (grid ** 2)
+
+    # Store results for all variants.
+    results = {}
+
+    # --------------------------------------------------
+    # 3. Train and evaluate every variant in order.
+    # --------------------------------------------------
+
+    for name, config in variants.items():
+
+        # Extract model configuration.
+        model_kw = {
+            key: config[key]
+            for key in MODEL_KEYS
+            if key in config
+        }
+
+        # Extract trainer configuration.
+        # The cosine setting is passed separately to fit().
+        train_kw = {
+            key: config[key]
+            for key in TRAIN_KEYS
+            if key != "cosine" and key in config
+        }
+
+        # Extract postprocessing configuration.
+        post_kw = {
+            key: config[key]
+            for key in POST_KEYS
+            if key in config
+        }
+
+        # Obtain the cosine scheduling setting (default: False).
+        cosine = config.get("cosine", False)
+
+        # --------------------------------------------------
+        # 4. Initialize the detector with the shared seed.
+        # --------------------------------------------------
+
+        model = TinyDetector(
+            num_classes,
+            num_anchors,
+            seed=seed,
+            **model_kw
+        )
+
+        # --------------------------------------------------
+        # 5. Train using the shared minibatch random stream.
+        # --------------------------------------------------
+
+        trainer = Trainer(
+            model,
+            **train_kw
+        )
+
+        history = trainer.fit(
+            train_images,
+            targets,
+            steps,
+            seed=seed,
+            cosine=cosine
+        )
+
+        # --------------------------------------------------
+        # 6. Run inference on the validation dataset.
+        # --------------------------------------------------
+
+        detections = detect(
+            model,
+            val_images,
+            anchors,
+            size=size,
+            **post_kw
+        )
+
+        # --------------------------------------------------
+        # 7. Evaluate COCO-style mean Average Precision.
+        # --------------------------------------------------
+
+        metrics = evaluate_map(
+            detections,
+            val_boxes,
+            val_labels,
+            num_classes
+        )
+
+        # --------------------------------------------------
+        # 8. Calculate the mean training loss of the last 10 steps.
+        # --------------------------------------------------
+
+        if len(history) > 0:
+            final_loss = float(np.mean(history[-10:, 0]))
+        else:
+            final_loss = float("nan")
+
+        # --------------------------------------------------
+        # 9. Store the results for this variant.
+        # --------------------------------------------------
+
+        results[name] = {
+            "map": float(metrics["map"]),
+            "map50": float(metrics["map50"]),
+            "map75": float(metrics["map75"]),
+            "final_loss": final_loss
+        }
+
+    return results
+

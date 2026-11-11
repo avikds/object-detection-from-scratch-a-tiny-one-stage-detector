@@ -36,6 +36,7 @@ python scaffold.py
 - [x] **24.** match_detections
 - [x] **25.** average_precision
 - [x] **26.** evaluate_map
+- [x] **27.** run_ablation
 
 ---
 
