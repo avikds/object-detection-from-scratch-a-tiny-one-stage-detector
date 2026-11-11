@@ -1543,3 +1543,75 @@ def detect(model, images, anchors, size=32, **post_kw):
     # Return detections in the original image order.
     return detections
 
+# Step 24 - match_detections
+def match_detections(det_boxes, gt_boxes, iou_thresh):
+    """
+    Greedily match detections to ground-truth boxes.
+
+    Args:
+        det_boxes: Detection boxes of shape (D, 4), sorted by
+                   decreasing confidence score.
+        gt_boxes: Ground-truth boxes of shape (G, 4).
+        iou_thresh: Minimum IoU required for a true positive.
+
+    Returns:
+        Boolean NumPy array of shape (D,).
+        True indicates a true positive; False indicates a false positive.
+    """
+
+    # Convert inputs to float64 NumPy arrays.
+    det_boxes = np.asarray(det_boxes, dtype=np.float64)
+    gt_boxes = np.asarray(gt_boxes, dtype=np.float64)
+
+    # Validate input shapes.
+    if det_boxes.ndim != 2 or det_boxes.shape[1] != 4:
+        raise ValueError("det_boxes must have shape (D, 4)")
+
+    if gt_boxes.ndim != 2 or gt_boxes.shape[1] != 4:
+        raise ValueError("gt_boxes must have shape (G, 4)")
+
+    # Initialize all detections as false positives.
+    D = len(det_boxes)
+    G = len(gt_boxes)
+
+    tp = np.zeros(D, dtype=bool)
+
+    # Return all False when there are no detections or ground-truth boxes.
+    if D == 0 or G == 0:
+        return tp
+
+    # Track which ground-truth boxes have already been matched.
+    matched = np.zeros(G, dtype=bool)
+
+    # Process detections in their given confidence-score order.
+    for i in range(D):
+
+        # Find the indices of unmatched ground-truth boxes.
+        unmatched = np.flatnonzero(~matched)
+
+        # Stop if every ground-truth box has already been matched.
+        if len(unmatched) == 0:
+            break
+
+        # Calculate IoU between the current detection and unmatched boxes.
+        ious = box_iou(
+            det_boxes[i:i + 1],
+            gt_boxes[unmatched]
+        )[0]
+
+        # Find the best unmatched ground-truth match.
+        # np.argmax selects the first index when IoU values are tied.
+        best_idx = np.argmax(ious)
+        best_iou = ious[best_idx]
+
+        # Mark as a true positive if the IoU meets the threshold.
+        if best_iou >= iou_thresh:
+
+            # Mark the detection as a true positive.
+            tp[i] = True
+
+            # Mark the matched ground-truth box as unavailable.
+            matched[unmatched[best_idx]] = True
+
+    return tp
+

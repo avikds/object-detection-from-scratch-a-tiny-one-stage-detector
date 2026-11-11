@@ -33,6 +33,7 @@ python scaffold.py
 - [x] **21.** nms
 - [x] **22.** postprocess
 - [x] **23.** detect
+- [x] **24.** match_detections
 
 ---
 
