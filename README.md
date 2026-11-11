@@ -18,6 +18,7 @@ python scaffold.py
 - [x] **6.** make_dataset
 - [x] **7.** make_anchors
 - [x] **8.** encode_boxes
+- [x] **9.** decode_boxes
 
 ---
 

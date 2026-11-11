@@ -487,3 +487,69 @@ def encode_boxes(gt, anchors):
     # Combine the four regression targets.
     return np.column_stack((tx, ty, tw, th)).astype(np.float64)
 
+# Step 9 - decode_boxes
+MAX_LOG_SCALE = float(np.log(1000.0 / 16))
+
+
+def decode_boxes(deltas, anchors):
+    """
+    Decode bounding-box regression deltas relative to anchor boxes.
+
+    Args:
+        deltas: Float array of shape (N, 4), containing
+                (tx, ty, tw, th).
+        anchors: Float array of shape (N, 4), containing
+                 [x0, y0, x1, y1].
+
+    Returns:
+        Float64 NumPy array of shape (N, 4), containing
+        decoded bounding boxes [x0, y0, x1, y1].
+    """
+
+    # Convert inputs to float64 NumPy arrays.
+    deltas = np.asarray(deltas, dtype=np.float64)
+    anchors = np.asarray(anchors, dtype=np.float64)
+
+    # Validate input shapes.
+    if deltas.ndim != 2 or deltas.shape[1] != 4:
+        raise ValueError("deltas must have shape (N, 4)")
+
+    if anchors.ndim != 2 or anchors.shape[1] != 4:
+        raise ValueError("anchors must have shape (N, 4)")
+
+    if deltas.shape != anchors.shape:
+        raise ValueError("deltas and anchors must have the same shape")
+
+    # Extract anchor widths and heights.
+    anchor_w = anchors[:, 2] - anchors[:, 0]
+    anchor_h = anchors[:, 3] - anchors[:, 1]
+
+    # Calculate anchor centers.
+    anchor_cx = (anchors[:, 0] + anchors[:, 2]) / 2.0
+    anchor_cy = (anchors[:, 1] + anchors[:, 3]) / 2.0
+
+    # Extract predicted regression deltas.
+    tx = deltas[:, 0]
+    ty = deltas[:, 1]
+
+    # Clamp logarithmic scale deltas to prevent exponential overflow.
+    tw = np.minimum(deltas[:, 2], MAX_LOG_SCALE)
+    th = np.minimum(deltas[:, 3], MAX_LOG_SCALE)
+
+    # Decode predicted box centers.
+    cx = anchor_cx + tx * anchor_w
+    cy = anchor_cy + ty * anchor_h
+
+    # Decode predicted box widths and heights.
+    w = anchor_w * np.exp(tw)
+    h = anchor_h * np.exp(th)
+
+    # Convert decoded centers and dimensions back to corner coordinates.
+    x0 = cx - w / 2.0
+    y0 = cy - h / 2.0
+    x1 = cx + w / 2.0
+    y1 = cy + h / 2.0
+
+    # Return decoded boxes as a float64 NumPy array.
+    return np.column_stack((x0, y0, x1, y1)).astype(np.float64)
+
